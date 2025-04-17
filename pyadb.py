@@ -6,28 +6,285 @@ from sys import stdout
 from typing import List, Optional, Tuple
 
 
+function_declarations = [
+    {
+        "name": "check_if_adb_installed",
+        "description": "Checks if ADB is installed and available in the system path.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "make_adb_command",
+        "description": "Creates a complete ADB command string by combining the ADB path and the command.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "adb": {
+                    "type": "string",
+                    "description": "Path to the ADB executable"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "The ADB command to execute"
+                }
+            },
+            "required": ["adb", "command"]
+        }
+    },
+    {
+        "name": "run_command",
+        "description": "Executes an ADB command and returns the result.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The ADB command to execute (without the ADB path)"
+                }
+            },
+            "required": ["command"]
+        }
+    },
+    {
+        "name": "list_android_devices",
+        "description": "Lists all connected Android devices.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "parse_device_list",
+        "description": "Parses the raw output from 'adb devices' command and extracts device information.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "adb_path": {
+                    "type": "string",
+                    "description": "Path to the ADB executable"
+                },
+                "raw_device_list": {
+                    "type": "string",
+                    "description": "Raw output from 'adb devices' command"
+                }
+            },
+            "required": ["adb_path", "raw_device_list"]
+        }
+    },
+    {
+        "name": "is_emulator",
+        "description": "Determines if a device is an emulator or a physical device.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string",
+                    "description": "The device identifier"
+                },
+                "adb_path": {
+                    "type": "string",
+                    "description": "Path to the ADB executable"
+                }
+            },
+            "required": ["device_id", "adb_path"]
+        }
+    },
+    {
+        "name": "get_device_details",
+        "description": "Gets detailed information about a specific device.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string",
+                    "description": "The device identifier"
+                },
+                "adb_path": {
+                    "type": "string",
+                    "description": "Path to the ADB executable"
+                }
+            },
+            "required": ["device_id", "adb_path"]
+        }
+    },
+    {
+        "name": "take_screenshot",
+        "description": "Takes a screenshot of the connected Android device.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "device_id": {
+                    "type": "string",
+                    "description": "The device identifier. If None, uses the default device."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "tap",
+        "description": "Taps at the specified coordinates on the device screen.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "x": {
+                    "type": "integer",
+                    "description": "X coordinate"
+                },
+                "y": {
+                    "type": "integer",
+                    "description": "Y coordinate"
+                }
+            },
+            "required": ["x", "y"]
+        }
+    },
+    {
+        "name": "swipe",
+        "description": "Swipes from one point to another on the device screen.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "x1": {
+                    "type": "integer",
+                    "description": "Starting X coordinate"
+                },
+                "y1": {
+                    "type": "integer",
+                    "description": "Starting Y coordinate"
+                },
+                "x2": {
+                    "type": "integer",
+                    "description": "Ending X coordinate"
+                },
+                "y2": {
+                    "type": "integer",
+                    "description": "Ending Y coordinate"
+                },
+                "duration": {
+                    "type": "integer",
+                    "description": "Swipe duration in milliseconds. Defaults to 300."
+                }
+            },
+            "required": ["x1", "y1", "x2", "y2"]
+        }
+    },
+    {
+        "name": "input_text",
+        "description": "Inputs text on the device.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Text to input"
+                }
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "press_key",
+        "description": "Presses a key on the device.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "keycode": {
+                    "type": "string",
+                    "description": "Key code (e.g., 'HOME', 'BACK'). Will be prefixed with 'KEYCODE_' if not already present."
+                }
+            },
+            "required": ["keycode"]
+        }
+    },
+    {
+        "name": "launch_app",
+        "description": "Launches an application by package name.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "package_name": {
+                    "type": "string",
+                    "description": "Package name of the app to launch"
+                }
+            },
+            "required": ["package_name"]
+        }
+    },
+    {
+        "name": "get_installed_packages",
+        "description": "Gets a list of installed packages on the device.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    }
+]
+
 class PyAdb:
     def check_if_adb_installed(self):
+        """
+        Checks if ADB is installed and available in the system path.
+
+        Returns:
+            tuple: (path_to_adb, error_message)
+                - path_to_adb (str or None): Path to the ADB executable if found
+                - error_message (str or None): Error message if ADB is not found
+        """
         if shutil.which('adb') is not None:
             return shutil.which('adb'), None
         else:
             return None, "Error can't locate adb"
 
     def make_adb_command(self, adb, command):
+        """
+        Creates a complete ADB command string by combining the ADB path and the command.
+
+        Args:
+            adb (str): Path to the ADB executable
+            command (str): The ADB command to execute
+
+        Returns:
+            str: The complete ADB command
+        """
         return f"{adb} {command}"
 
     def run_command(self, command):
+        """
+        Executes an ADB command and returns the result.
+
+        Args:
+            command (str): The ADB command to execute (without the ADB path)
+
+        Returns:
+            tuple: (result, error)
+                - result (subprocess.CompletedProcess or None): Result of command execution
+                - error (str or None): Error message if ADB is not installed
+        """
         path, error = self.check_if_adb_installed()
 
         if error is not None:
-            return None,error
+            return None, error
 
         task = self.make_adb_command(path, command)
         print(task)
         result = subprocess.run(task, shell=True, capture_output=True, text=True)
-        return result,None
+        return result, None
 
     def list_android_devices(self):
+        """
+        Lists all connected Android devices.
+
+        Returns:
+            tuple: (devices_list, error)
+                - devices_list (list or None): List of connected devices with their details
+                - error (str or None): Error message if ADB is not installed or fails
+        """
         path, error = self.check_if_adb_installed()
         if error is not None:
             return None, error
@@ -40,6 +297,16 @@ class PyAdb:
                 return self.parse_device_list(path, result.stdout)
 
     def parse_device_list(self, adb_path, raw_device_list):
+        """
+        Parses the raw output from 'adb devices' command and extracts device information.
+
+        Args:
+            adb_path (str): Path to the ADB executable
+            raw_device_list (str): Raw output from 'adb devices' command
+
+        Returns:
+            list: List of dictionaries containing device information
+        """
         device_map = []
 
         # Split by lines and skip the first line (header line "List of devices attached")
@@ -66,8 +333,14 @@ class PyAdb:
 
     def is_emulator(self, device_id, adb_path):
         """
-        Determine if the device is an emulator or a physical device.
-        Returns True if it's an emulator, False if it's a physical device.
+        Determines if a device is an emulator or a physical device.
+
+        Args:
+            device_id (str): The device identifier
+            adb_path (str): Path to the ADB executable
+
+        Returns:
+            bool: True if the device is an emulator, False if it's a physical device
         """
         # Method 1: Check the device ID format
         if device_id.startswith('emulator-') or device_id.startswith('localhost:'):
@@ -106,6 +379,16 @@ class PyAdb:
         return False
 
     def get_device_details(self, device_id, adb_path):
+        """
+        Gets detailed information about a specific device.
+
+        Args:
+            device_id (str): The device identifier
+            adb_path (str): Path to the ADB executable
+
+        Returns:
+            dict: Dictionary containing device details (model, android_version, serial)
+        """
         details = {}
 
         # Get device model
@@ -128,23 +411,18 @@ class PyAdb:
 
         return details
 
-    # def get_all_devices_with_details():
-    #     raw_list, error = list_android_devices()
-    #     if error is not None:
-    #         return None, error
-    #
-    #     device_map = parse_device_list(raw_list)
-    #     adb_path, _ = check_if_adb_installed()
-    #
-    #     # Enrich each device with additional details
-    #     for device in device_map:
-    #         if device['status'] == 'device':  # Only get details for connected devices
-    #             details = get_device_details(device['id'], adb_path)
-    #             device_map[device_id].update(details)
-    #
-    #     return device_map, None
-
     def take_screenshot(self, device_id=None):
+        """
+        Takes a screenshot of the connected Android device.
+
+        Args:
+            device_id (str, optional): The device identifier. If None, uses the default device.
+
+        Returns:
+            tuple: (filename, error)
+                - filename (str or None): Path to the screenshot file if successful
+                - error (str or None): Error message if the operation fails
+        """
         path, error = self.check_if_adb_installed()
         if error is not None:
             return None, error
@@ -170,33 +448,33 @@ class PyAdb:
 
     def tap(self, x: int, y: int) -> None:
         """
-        Tap at the specified coordinates
+        Taps at the specified coordinates on the device screen.
 
         Args:
-            x: X coordinate
-            y: Y coordinate
+            x (int): X coordinate
+            y (int): Y coordinate
         """
         self.run_command(f"shell input tap {x} {y}")
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300) -> None:
         """
-        Swipe from one point to another
+        Swipes from one point to another on the device screen.
 
         Args:
-            x1: Starting X coordinate
-            y1: Starting Y coordinate
-            x2: Ending X coordinate
-            y2: Ending Y coordinate
-            duration: Swipe duration in milliseconds
+            x1 (int): Starting X coordinate
+            y1 (int): Starting Y coordinate
+            x2 (int): Ending X coordinate
+            y2 (int): Ending Y coordinate
+            duration (int, optional): Swipe duration in milliseconds. Defaults to 300.
         """
         self.run_command(f"shell input swipe {x1} {y1} {x2} {y2} {duration}")
 
     def input_text(self, text: str) -> None:
         """
-        Input text on the device
+        Inputs text on the device.
 
         Args:
-            text: Text to input
+            text (str): Text to input
         """
         # Escape special characters for shell
         text = text.replace("'", "\\'").replace(" ", "%s")
@@ -204,12 +482,11 @@ class PyAdb:
 
     def press_key(self, keycode: str) -> None:
         """
-        Press a key on the device
+        Presses a key on the device.
 
         Args:
-            keycode: Key code (e.g., 'KEYCODE_HOME', 'KEYCODE_BACK')
-            :param keycode:
-            :param self:
+            keycode (str): Key code (e.g., 'HOME', 'BACK')
+                Will be prefixed with 'KEYCODE_' if not already present
         """
         if not keycode.startswith("KEYCODE_"):
             keycode = f"KEYCODE_{keycode}"
@@ -218,16 +495,15 @@ class PyAdb:
 
     def launch_app(self, package_name: str) -> None:
         """
-        Launch an application by package name
+        Launches an application by package name.
 
         Args:
-            package_name: Package name of the app to launch
+            package_name (str): Package name of the app to launch
         """
         # Get launcher activity for the package
         result, error = self.run_command(f"shell cmd package resolve-activity --brief {package_name}")
 
         if error or (result and ((result.returncode != 0 or result.stderr) or ("No activity found" in result.stdout))):
-
             # Try direct method if activity resolution fails
             self.run_command(f"shell monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
         else:
@@ -236,13 +512,12 @@ class PyAdb:
             activity = stdout.splitlines()[1].strip()
             self.run_command(f"shell am start -n {activity}")
 
-
     def get_installed_packages(self) -> List[str]:
         """
-        Get a list of installed packages on the device
+        Gets a list of installed packages on the device.
 
         Returns:
-            List of package names
+            List[str]: List of package names
         """
         stdout, _ = self.run_command("shell pm list packages")
         packages = []

@@ -3,13 +3,15 @@ import subprocess
 from platform import system
 import time
 from sys import stdout
+from PIL import Image
 from typing import List, Optional, Tuple
 
+from PIL.ImagePalette import raw
 
 function_declarations = [
     {
         "name": "check_if_adb_installed",
-        "description": "Checks if ADB is installed and available in the system path.",
+        "description": "Checks if ADB is installed and available in the system path. Returns the path to ADB or an error.",
         "parameters": {
             "type": "object",
             "properties": {},
@@ -18,7 +20,7 @@ function_declarations = [
     },
     {
         "name": "make_adb_command",
-        "description": "Creates a complete ADB command string by combining the ADB path and the command.",
+        "description": "Creates a complete ADB command string by combining the ADB executable path and the command.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -36,7 +38,7 @@ function_declarations = [
     },
     {
         "name": "run_command",
-        "description": "Executes an ADB command and returns the result.",
+        "description": "Executes an ADB command and returns the result as a CompletedProcess object or an error message.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -50,7 +52,7 @@ function_declarations = [
     },
     {
         "name": "list_android_devices",
-        "description": "Lists all connected Android devices.",
+        "description": "Lists all connected Android devices with their details and status. Returns a list of device objects or an error.",
         "parameters": {
             "type": "object",
             "properties": {},
@@ -59,7 +61,7 @@ function_declarations = [
     },
     {
         "name": "parse_device_list",
-        "description": "Parses the raw output from 'adb devices' command and extracts device information.",
+        "description": "Parses the raw output from 'adb devices' command and extracts device information including status, ID, and details.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -77,7 +79,7 @@ function_declarations = [
     },
     {
         "name": "is_emulator",
-        "description": "Determines if a device is an emulator or a physical device.",
+        "description": "Determines if a device is an emulator or a physical device by checking device ID and system properties.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -95,7 +97,7 @@ function_declarations = [
     },
     {
         "name": "get_device_details",
-        "description": "Gets detailed information about a specific device.",
+        "description": "Gets detailed information about a specific device including model, Android version, and serial number.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -113,7 +115,7 @@ function_declarations = [
     },
     {
         "name": "take_screenshot",
-        "description": "Takes a screenshot of the connected Android device.",
+        "description": "Takes a screenshot of the connected Android device, saves it as a PNG file with timestamp, and returns the raw PNG data.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -127,7 +129,7 @@ function_declarations = [
     },
     {
         "name": "tap",
-        "description": "Taps at the specified coordinates on the device screen.",
+        "description": "Taps at the specified coordinates on the device screen and returns operation result details.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -145,7 +147,7 @@ function_declarations = [
     },
     {
         "name": "swipe",
-        "description": "Swipes from one point to another on the device screen.",
+        "description": "Swipes from one point to another on the device screen with configurable duration and returns operation result details.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -175,13 +177,13 @@ function_declarations = [
     },
     {
         "name": "input_text",
-        "description": "Inputs text on the device.",
+        "description": "Inputs text on the device with special character handling and returns operation result details.",
         "parameters": {
             "type": "object",
             "properties": {
                 "text": {
                     "type": "string",
-                    "description": "Text to input"
+                    "description": "Text to input (spaces will be converted to %s and single quotes will be escaped)"
                 }
             },
             "required": ["text"]
@@ -189,7 +191,7 @@ function_declarations = [
     },
     {
         "name": "press_key",
-        "description": "Presses a key on the device.",
+        "description": "Presses a key on the device by sending a keyevent and returns operation result details.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -203,7 +205,7 @@ function_declarations = [
     },
     {
         "name": "launch_app",
-        "description": "Launches an application by package name.",
+        "description": "Launches an application by package name using either activity resolution or monkey tool and returns detailed operation result.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -217,7 +219,7 @@ function_declarations = [
     },
     {
         "name": "get_installed_packages",
-        "description": "Gets a list of installed packages on the device.",
+        "description": "Gets a list of all installed packages on the device by parsing the output of 'pm list packages'.",
         "parameters": {
             "type": "object",
             "properties": {},
@@ -225,7 +227,7 @@ function_declarations = [
         }
     }
 ]
-
+ 
 class PyAdb:
     def check_if_adb_installed(self):
         """
@@ -305,7 +307,11 @@ class PyAdb:
             raw_device_list (str): Raw output from 'adb devices' command
 
         Returns:
-            list: List of dictionaries containing device information
+            list: List of dictionaries containing device information with keys:
+                - status: Device connection status (e.g., 'device', 'offline')
+                - id: Device identifier
+                - is_emulator: Boolean indicating if the device is an emulator
+                - detail: Tuple containing (device_details, error)
         """
         device_map = []
 
@@ -387,7 +393,9 @@ class PyAdb:
             adb_path (str): Path to the ADB executable
 
         Returns:
-            dict: Dictionary containing device details (model, android_version, serial)
+            tuple: (details, error)
+                - details (dict or None): Dictionary containing device details (model, android_version, serial) if successful
+                - error (str or None): Error message if any property retrieval fails
         """
         details = {}
 
@@ -396,31 +404,37 @@ class PyAdb:
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         if result.returncode == 0:
             details['model'] = result.stdout.strip()
+        else:
+            return None, result.stderr
 
         # Get Android version
         cmd = self.make_adb_command(adb_path, f"-s {device_id} shell getprop ro.build.version.release")
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         if result.returncode == 0:
             details['android_version'] = result.stdout.strip()
+        else:
+            return None, result.stderr
 
         # Get device serial number
         cmd = self.make_adb_command(adb_path, f"-s {device_id} shell getprop ro.serialno")
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         if result.returncode == 0:
             details['serial'] = result.stdout.strip()
+        else:
+            return None, result.stderr
 
-        return details
+        return details, None
 
     def take_screenshot(self, device_id=None):
         """
-        Takes a screenshot of the connected Android device.
+        Takes a screenshot of the connected Android device, saves it as a PNG file with timestamp, and returns the raw PNG data.
 
         Args:
             device_id (str, optional): The device identifier. If None, uses the default device.
 
         Returns:
-            tuple: (filename, error)
-                - filename (str or None): Path to the screenshot file if successful
+            tuple: (raw_data, error)
+                - raw_data (bytes or None): Raw PNG data of the screenshot if successful
                 - error (str or None): Error message if the operation fails
         """
         path, error = self.check_if_adb_installed()
@@ -428,35 +442,62 @@ class PyAdb:
             return None, error
 
         device_param = f"-s {device_id} " if device_id else ""
+        filename = f"{time.time()}_screen.png"
 
-        filename = f"{device_id}_{time.time()}_screen.png" if device_id else "screen.png"
+        # Capture screenshot data using ADB screencap command with -p flag (PNG format)
+        command = self.make_adb_command(path, f"{device_param}shell screencap -p")
+        screen_cap_result = subprocess.run(command, shell=True, capture_output=True)
+        
+        if screen_cap_result.returncode != 0:
+            return None, "Failed to capture screenshot"
+        
+        try:
+            # Get the raw data
+            raw_data = screen_cap_result.stdout
+            
+            # Save it to a file (optional)
+            with open(filename, 'wb') as f:
+                f.write(raw_data)
+            
+            return raw_data, None
+        except Exception as e:
+            return None, f"Error processing screenshot data: {str(e)}"
 
-        command = self.make_adb_command(path, f"{device_param}shell screencap -p /sdcard/{filename}")
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            return None, result.stderr
-
-        # Pull the screenshot to local machine
-        pull_cmd = self.make_adb_command(path, f"{device_param}pull /sdcard/{filename} {filename}")
-        pull_result = subprocess.run(pull_cmd, shell=True, capture_output=True, text=True)
-
-        if pull_result.returncode != 0:
-            return None, pull_result.stderr
-
-        return filename, None
-
-    def tap(self, x: int, y: int) -> None:
+    def tap(self, x: int, y: int) -> dict:
         """
         Taps at the specified coordinates on the device screen.
 
         Args:
             x (int): X coordinate
             y (int): Y coordinate
+            
+        Returns:
+            dict: Result of the tap operation including:
+                - success (bool): Whether the command was successful
+                - return_code (int): The return code of the command
+                - stdout (str): Standard output if any
+                - stderr (str): Standard error if any
+                - command (str): The command that was executed
         """
-        self.run_command(f"shell input tap {x} {y}")
+        command = f"shell input tap {x} {y}"
+        result, error = self.run_command(command)
+        
+        if error:
+            return {
+                "success": False,
+                "error": error,
+                "command": command
+            }
+        
+        return {
+            "success": result.returncode == 0,
+            "return_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "command": command
+        }
 
-    def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300) -> None:
+    def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300) -> dict:
         """
         Swipes from one point to another on the device screen.
 
@@ -466,60 +507,187 @@ class PyAdb:
             x2 (int): Ending X coordinate
             y2 (int): Ending Y coordinate
             duration (int, optional): Swipe duration in milliseconds. Defaults to 300.
+            
+        Returns:
+            dict: Result of the swipe operation including:
+                - success (bool): Whether the command was successful
+                - return_code (int): The return code of the command
+                - stdout (str): Standard output if any
+                - stderr (str): Standard error if any
+                - command (str): The command that was executed
         """
-        self.run_command(f"shell input swipe {x1} {y1} {x2} {y2} {duration}")
+        command = f"shell input swipe {x1} {y1} {x2} {y2} {duration}"
+        result, error = self.run_command(command)
+        
+        if error:
+            return {
+                "success": False,
+                "error": error,
+                "command": command
+            }
+        
+        return {
+            "success": result.returncode == 0,
+            "return_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "command": command
+        }
 
-    def input_text(self, text: str) -> None:
+    def input_text(self, text: str) -> dict:
         """
         Inputs text on the device.
 
         Args:
             text (str): Text to input
+            
+        Returns:
+            dict: Result of the text input operation including:
+                - success (bool): Whether the command was successful
+                - return_code (int): The return code of the command
+                - stdout (str): Standard output if any
+                - stderr (str): Standard error if any
+                - command (str): The command that was executed
         """
         # Escape special characters for shell
         text = text.replace("'", "\\'").replace(" ", "%s")
-        self.run_command(f"shell input text '{text}'")
+        command = f"shell input text '{text}'"
+        result, error = self.run_command(command)
+        
+        if error:
+            return {
+                "success": False,
+                "error": error,
+                "command": command
+            }
+        
+        return {
+            "success": result.returncode == 0,
+            "return_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "command": command
+        }
 
-    def press_key(self, keycode: str) -> None:
+    def press_key(self, keycode: str) -> dict:
         """
         Presses a key on the device.
 
         Args:
             keycode (str): Key code (e.g., 'HOME', 'BACK')
                 Will be prefixed with 'KEYCODE_' if not already present
+
+        Returns:
+            dict: Result of the key press operation including:
+                - success (bool): Whether the command was successful
+                - return_code (int): The return code of the command
+                - stdout (str): Standard output if any
+                - stderr (str): Standard error if any
+                - command (str): The command that was executed
         """
         if not keycode.startswith("KEYCODE_"):
             keycode = f"KEYCODE_{keycode}"
 
-        self.run_command(f"shell input keyevent {keycode}")
+        command = f"shell input keyevent {keycode}"
+        result, error = self.run_command(command)
+        
+        if error:
+            return {
+                "success": False,
+                "error": error,
+                "command": command
+            }
+        
+        return {
+            "success": result.returncode == 0,
+            "return_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "command": command
+        }
 
-    def launch_app(self, package_name: str) -> None:
+    def launch_app(self, package_name: str) -> dict:
         """
         Launches an application by package name.
 
         Args:
             package_name (str): Package name of the app to launch
+            
+        Returns:
+            dict: Result of the app launch operation including:
+                - success (bool): Whether the command was successful
+                - return_code (int): The return code of the command
+                - stdout (str): Standard output if any
+                - stderr (str): Standard error if any
+                - command (str): The command that was executed
         """
         # Get launcher activity for the package
-        result, error = self.run_command(f"shell cmd package resolve-activity --brief {package_name}")
+        resolve_cmd = f"shell cmd package resolve-activity --brief {package_name}"
+        result, error = self.run_command(resolve_cmd)
+        
+        if error:
+            return {
+                "success": False,
+                "error": error,
+                "command": resolve_cmd
+            }
 
-        if error or (result and ((result.returncode != 0 or result.stderr) or ("No activity found" in result.stdout))):
+        if result.returncode != 0 or result.stderr or "No activity found" in result.stdout:
             # Try direct method if activity resolution fails
-            self.run_command(f"shell monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
+            monkey_cmd = f"shell monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
+            monkey_result, monkey_error = self.run_command(monkey_cmd)
+            
+            if monkey_error:
+                return {
+                    "success": False,
+                    "error": monkey_error,
+                    "command": monkey_cmd
+                }
+            
+            return {
+                "success": monkey_result.returncode == 0,
+                "return_code": monkey_result.returncode,
+                "stdout": monkey_result.stdout,
+                "stderr": monkey_result.stderr,
+                "command": monkey_cmd,
+                "method": "monkey"
+            }
         else:
             # Extract and launch the main activity
             stdout = result.stdout.strip()
             activity = stdout.splitlines()[1].strip()
-            self.run_command(f"shell am start -n {activity}")
+            start_cmd = f"shell am start -n {activity}"
+            start_result, start_error = self.run_command(start_cmd)
+            
+            if start_error:
+                return {
+                    "success": False,
+                    "error": start_error,
+                    "command": start_cmd
+                }
+            
+            return {
+                "success": start_result.returncode == 0,
+                "return_code": start_result.returncode,
+                "stdout": start_result.stdout,
+                "stderr": start_result.stderr,
+                "command": start_cmd,
+                "method": "am start",
+                "activity": activity
+            }
 
     def get_installed_packages(self) -> List[str]:
         """
         Gets a list of installed packages on the device.
 
         Returns:
-            List[str]: List of package names
+            tuple: (packages, error)
+                - packages (List[str] or None): List of package names if successful
+                - error (str or None): Error message if the operation fails
         """
-        stdout, _ = self.run_command("shell pm list packages")
+        stdout, error = self.run_command("shell pm list packages")
+        if error:
+            return None, error
         packages = []
 
         for line in stdout.splitlines():
@@ -527,4 +695,4 @@ class PyAdb:
                 package = line[8:].strip()  # Remove 'package:' prefix
                 packages.append(package)
 
-        return packages
+        return packages, None
